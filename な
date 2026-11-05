@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>席替えあみだくじ</title>
+    <style>
+        /* 必要最小限の超軽量スタイリング */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #f4f6f8; color: #333; padding: 12px; line-height: 1.4; }
+        .app-card { max-width: 650px; margin: 0 auto; background: #fff; padding: 16px; border-radius: 8px; border: 1px solid #ccc; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        
+        /* ヘッダー・モード切り替え */
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 12px; }
+        .header h1 { font-size: 1.2rem; }
+        .mode-badge { padding: 4px 8px; font-size: 0.75rem; font-weight: bold; border-radius: 4px; }
+        .mode-student { background: #e7f5ff; color: #1971c2; border: 1px solid #a5d8ff; }
+        .mode-admin { background: #ffe3e3; color: #c92a2a; border: 1px solid #ffc9c9; }
+        
+        .mode-switch-bar { display: flex; gap: 8px; margin-bottom: 15px; }
+        .tab-btn { flex: 1; padding: 8px; border: 1px solid #ced4da; background: #e9ecef; font-weight: bold; cursor: pointer; border-radius: 4px; text-align: center; font-size: 0.85rem; }
+        .tab-btn.active-student { background: #228be6; color: #fff; border-color: #228be6; }
+        .tab-btn.active-admin { background: #e03131; color: #fff; border-color: #e03131; }
+
+        /* セクション */
+        .box { background: #f8f9fa; border: 1px solid #e9ecef; padding: 12px; border-radius: 6px; margin-bottom: 12px; }
+        .box h2 { font-size: 0.95rem; margin-bottom: 8px; border-bottom: 1px solid #dee2e6; padding-bottom: 4px; color: #495057; }
+        
+        /* フォーム系 */
+        label { font-size: 0.8rem; font-weight: bold; display: block; margin-top: 6px; }
+        input, select, textarea { font-family: inherit; font-size: 0.85rem; padding: 6px; margin-top: 3px; border: 1px solid #ced4da; border-radius: 4px; width: 100%; }
+        textarea { height: 70px; resize: vertical; }
+        
+        button { font-family: inherit; font-size: 0.85rem; font-weight: bold; padding: 7px 12px; border: none; border-radius: 4px; cursor: pointer; margin-top: 8px; width: 100%; }
+        button.btn-primary { background: #228be6; color: white; }
+        button.btn-admin { background: #e03131; color: white; }
+        button.btn-sub { background: #6c757d; color: white; }
+        button.btn-sm { width: auto; padding: 4px 8px; font-size: 0.75rem; margin-top: 0; }
+        
+        .flex { display: flex; gap: 6px; align-items: center; }
+        .url-box { background: #fff; border: 1px solid #ced4da; padding: 6px; border-radius: 4px; font-size: 0.75rem; word-break: break-all; margin-top: 4px; color: #495057; }
+
+        /* あみだ表示 */
+        canvas { background: #fff; border: 1px solid #ced4da; display: block; margin: 10px auto; max-width: 100%; border-radius: 4px; }
+        
+        /* 座席表 */
+        .seat-grid { display: grid; gap: 6px; margin-top: 8px; }
+        .seat-cell { border: 1px solid #ced4da; background: #fff; padding: 6px; text-align: center; border-radius: 4px; font-size: 0.8rem; }
+        .seat-cell.filled { background: #e7f5ff; border-color: #74c0fc; font-weight: bold; color: #1864ab; }
+        
+        /* 結果表示 */
+        .result-box { background: #d3f9d8; border: 1px solid #b2f2bb; color: #2b8a3e; padding: 10px; border-radius: 4px; text-align: center; font-weight: bold; font-size: 0.95rem; margin-bottom: 10px; display: none; }
+        
+        /* 裏仕込み行 */
+        .secret-row { display: flex; gap: 4px; margin-bottom: 6px; align-items: center; }
+        .secret-row select { font-size: 0.75rem; margin-top: 0; }
+    </style>
+</head>
+<body>
+
+<div class="app-card">
+    <div class="header">
+        <h1>席替えあみだくじ</h1>
+        <span id="modeBadge" class="mode-badge mode-student">生徒閲覧モード</span>
+    </div>
+
+    <!-- モード切り替えタブ -->
+    <div class="mode-switch-bar">
+        <div id="tabStudent" class="tab-btn active-student" onclick="switchMode('view')">👨‍🎓 生徒画面 (表)</div>
+        <div id="tabAdmin" class="tab-btn" onclick="switchMode('admin')">⚙️ 管理者画面 (裏)</div>
+    </div>
+
+    <!-- 1. 生徒用画面 (VIEW) -->
+    <div id="studentSection">
+        <div class="box">
+            <h2>あみだくじを引く</h2>
+            <label for="studentSelect">あなたの名前を選択:</label>
+            <div class="flex" style="margin-top: 4px;">
+                <select id="studentSelect">
+                    <option value="">-- 名前を選択してください --</option>
+                </select>
+                <button class="btn-primary btn-sm" onclick="startAmida()" style="white-space: nowrap;">あみだを辿る</button>
+            </div>
+        </div>
+
+        <div id="resultBox" class="result-box"></div>
+
+        <canvas id="amidaCanvas" width="600" height="380"></canvas>
+
+        <div class="box">
+            <h2>座席表（決定一覧）</h2>
+            <div id="seatGrid" class="seat-grid"></div>
+        </div>
+    </div>
+
+    <!-- 2. 管理者用画面 (ADMIN) -->
+    <div id="adminSection" style="display: none;">
+        <!-- 裏操作仕込み設定 -->
+        <div class="box" style="border-color: #ffc9c9; background: #fff5f5;">
+            <h2 style="color: #c92a2a; border-color: #ffc9c9;">🤫 【裏操作】席の仕込み固定</h2>
+            <p style="font-size: 0.75rem; color: #868e96; margin-bottom: 6px;">特定の生徒が必ず指定した席番号に到達するよう裏で自動制御します。</p>
+            
+            <div id="secretRulesList"></div>
+            
+            <div class="flex" style="margin-top: 8px;">
+                <button class="btn-sub btn-sm" onclick="addRuleRow()">+ 条件追加</button>
+                <button class="btn-admin btn-sm" onclick="applySecretRules()">仕込み保存・適用</button>
+            </div>
+        </div>
+
+        <!-- クラス基本設定 -->
+        <div class="box">
+            <h2>クラス設定</h2>
+            <div class="flex">
+                <div style="flex: 1;">
+                    <label>横（列数）:</label>
+                    <input type="number" id="colsInput" min="1" max="10" value="5">
+                </div>
+                <div style="flex: 1;">
+                    <label>縦（行数）:</label>
+                    <input type="number" id="rowsInput" min="1" max="10" value="5">
+                </div>
+            </div>
+            <label>生徒名簿 (改行区切り):</label>
+            <textarea id="studentsInput"></textarea>
+            <button class="btn-primary" onclick="saveClassConfig()">設定を更新して再生成</button>
+        </div>
+
+        <!-- URL管理 -->
+        <div class="box">
+            <h2>🔗 URL発行・共有</h2>
+            
+            <label>① 生徒用（表）URL <span style="font-weight:normal; font-size:0.7rem; color:#868e96;">※仕込み機能は完全に隠れます</span></label>
+            <div id="studentUrlBox" class="url-box">-</div>
+            <button class="btn-sub btn-sm" onclick="copyUrl('student')" style="margin-top:4px;">生徒用URLをコピー</button>
+
+            <label style="margin-top: 10px;">② 管理者用（裏）URL <span style="font-weight:normal; font-size:0.7rem; color:#c92a2a;">※仕込み設定が可能なURL</span></label>
+            <div id="adminUrlBox" class="url-box">-</div>
+            <button class="btn-admin btn-sm" onclick="copyUrl('admin')" style="margin-top:4px;">管理者用URLをコピー</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- グローバル状態 ---
+    let state = {
+        mode: 'view', // 'view' or 'admin'
+        cols: 5,
+        rows: 5,
+        students: ["生徒A", "生徒B", "生徒C", "生徒D", "生徒E"],
+        secretRules: [], // { student: string, seatIndex: number }
+        lines: [],       // 横線データ
+        results: {}      // studentIndex -> seatIndex
+    };
+
+    const canvas = document.getElementById('amidaCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // 初期起動
+    window.addEventListener('DOMContentLoaded', () => {
+        parseUrlParams();
+        initUI();
+        generateAmida();
+        renderAll();
+    });
+
+    // パラメータ読み込み
+    function parseUrlParams() {
+        const params = new URLSearchParams(window.location.search);
+        const mode = params.get('mode');
+        if (mode === 'admin') {
+            state.mode = 'admin';
+        } else {
+            state.mode = 'view';
+        }
+
+        const data = params.get('data');
+        if (data) {
+            try {
+                const decoded = JSON.parse(decodeURIComponent(escape(atob(data))));
+                if (decoded.cols) state.cols = decoded.cols;
+                if (decoded.rows) state.rows = decoded.rows;
+                if (decoded.students) state.students = decoded.students;
+                if (decoded.secretRules) state.secretRules = decoded.secretRules;
+            } catch (e) {
+                console.error("URL解析エラー", e);
+            }
+        }
+    }
+
+    // UI初期状態作成
+    function initUI() {
+        document.getElementById('colsInput').value = state.cols;
+        document.getElementById('rowsInput').value = state.rows;
+        document.getElementById('studentsInput').value = state.students.join('\n');
+
+        updateSelectOptions();
+        updateModeDisplay();
+        updateUrlBoxes();
+    }
+
+    // モード切り替え
+    function switchMode(newMode) {
+        state.mode = newMode;
+        updateModeDisplay();
+    }
+
+    function updateModeDisplay() {
+        const badge = document.getElementById('modeBadge');
+        const studentSec = document.getElementById('studentSection');
+        const adminSec = document.getElementById('adminSection');
+        const tabStudent = document.getElementById('tabStudent');
+        const tabAdmin = document.getElementById('tabAdmin');
+
+        if (state.mode === 'admin') {
+            badge.innerText = "管理者モード（裏操作可）";
+            badge.className = "mode-badge mode-admin";
+            studentSec.style.display = "none";
+            adminSec.style.display = "block";
+            tabStudent.className = "tab-btn";
+            tabAdmin.className = "tab-btn active-admin";
+            renderSecretRulesList();
+        } else {
+            badge.innerText = "生徒閲覧モード";
+            badge.className = "mode-badge mode-student";
+            studentSec.style.display = "block";
+            adminSec.style.display = "none";
+            tabStudent.className = "tab-btn active-student";
+            tabAdmin.className = "tab-btn";
+        }
+    }
+
+    function updateSelectOptions() {
+        const select = document.getElementById('studentSelect');
+        select.innerHTML = '<option value="">-- 名前を選択してください --</option>';
+        state.students.forEach((s, idx) => {
+            const opt = document.createElement('option');
+            opt.value = idx;
+            opt.textContent = `${idx + 1}. ${s}`;
+            select.appendChild(opt);
+        });
+    }
+
+    // --- あみだ生成＆裏操作アルゴリズム ---
+    function generateAmida() {
+        const n = state.students.length;
+        if (n < 2) return;
+
+        // 1. 基本のランダム横線生成
+        let lines = [];
+        const levels = 8;
+        for (let lvl = 1; lvl < levels; lvl++) {
+            const ratio = lvl / levels;
+            for (let c = 0; c < n - 1; c++) {
+                if (Math.random() < 0.4) {
+                    lines.push({ fromCol: c, ratio: ratio });
+                    c++;
+                }
+            }
+        }
+
+        // 現在の到達点判定
+        let currentMap = computeMapping(n, lines);
+
+        // 2. 裏操作の補正線を下部に合成
+        if (state.secretRules.length > 0) {
+            lines = applySecrets(n, lines, currentMap);
+        }
+
+        state.lines = lines;
+        state.results = computeMapping(n, state.lines);
+    }
+
+    function computeMapping(n, lines) {
+        let sorted = [...lines].sort((a, b) => a.ratio - b.ratio);
+        let pos = Array.from({length: n}, (_, i) => i);
+
+        sorted.forEach(l => {
+            const c = l.fromCol;
+            const i1 = pos.indexOf(c);
+            const i2 = pos.indexOf(c + 1);
+            [pos[i1], pos[i2]] = [pos[i2], pos[i1]];
+        });
+
+        let map = {};
+        pos.forEach((finalCol, startCol) => {
+            map[startCol] = finalCol;
+        });
+        return map;
+    }
+
+    function applySecrets(n, baseLines, currentMap) {
+        let lines = [...baseLines];
+        let desired = {};
+
+        state.secretRules.forEach(r => {
+            const sIdx = state.students.indexOf(r.student);
+            if (sIdx !== -1 && r.seatIndex < n) {
+                desired[sIdx] = r.seatIndex;
+            }
+        });
+
+        let usedSeats = new Set(Object.values(desired));
+        let unusedSeats = [];
+        for (let i = 0; i < n; i++) {
+            if (!usedSeats.has(i)) unusedSeats.push(i);
+        }
+        for (let i = 0; i < n; i++) {
+            if (desired[i] === undefined) desired[i] = unusedSeats.shift();
+        }
+
+        let stateArr = [];
+        for (let i = 0; i < n; i++) stateArr[i] = currentMap[i];
+
+        let swaps = [];
+        for (let i = 0; i < n; i++) {
+            for (let j = 0; j < n - 1; j++) {
+                const valA = stateArr[j];
+                const valB = stateArr[j+1];
+                const origA = Object.keys(currentMap).find(k => currentMap[k] === valA);
+                const origB = Object.keys(currentMap).find(k => currentMap[k] === valB);
+
+                if (desired[origA] > desired[origB]) {
+                    swaps.push(j);
+                    [stateArr[j], stateArr[j+1]] = [stateArr[j+1], stateArr[j]];
+                }
+            }
+        }
+
+        const baseRatio = 0.88;
+        const step = 0.1 / (swaps.length || 1);
+        swaps.forEach((col, idx) => {
+            lines.push({ fromCol: col, ratio: baseRatio + (idx * step) });
+        });
+
+        return lines;
+    }
+
+    // --- 描画処理 ---
+    function renderAll() {
+        drawAmida();
+        renderSeatGrid();
+    }
+
+    function drawAmida(highlightCol = null) {
+        const n = state.students.length;
+        if (n < 2) return;
+
+        const padding = 30;
+        const w = canvas.width;
+        const h = canvas.height;
+        const colW = (w - padding * 2) / (n - 1 || 1);
+
+        ctx.clearRect(0, 0, w, h);
+
+        // 縦線
+        ctx.strokeStyle = '#adb5bd';
+        ctx.lineWidth = 2;
+        for (let i = 0; i < n; i++) {
+            const x = padding + i * colW;
+            ctx.beginPath();
+            ctx.moveTo(x, 40);
+            ctx.lineTo(x, h - 40);
+            ctx.stroke();
+
+            // 名前
+            ctx.fillStyle = '#212529';
+            ctx.font = '12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(state.students[i], x, 25);
+
+            // 席番
+            ctx.fillStyle = '#495057';
+            ctx.fillText(`${i + 1}番`, x, h - 20);
+        }
+
+        // 横線
+        state.lines.forEach(l => {
+            const x1 = padding + l.fromCol * colW;
+            const x2 = padding + (l.fromCol + 1) * colW;
+            const y = 40 + l.ratio * (h - 80);
+
+            ctx.beginPath();
+            ctx.moveTo(x1, y);
+            ctx.lineTo(x2, y);
+            ctx.stroke();
+        });
+
+        // 強調表示
+        if (highlightCol !== null) {
+            const path = getPathPoints(highlightCol, padding, colW, h);
+            ctx.strokeStyle = '#e03131';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(path[0].x, path[0].y);
+            for (let i = 1; i < path.length; i++) {
+                ctx.lineTo(path[i].x, path[i].y);
+            }
+            ctx.stroke();
+        }
+    }
+
+    function getPathPoints(startCol, padding, colW, h) {
+        let sorted = [...state.lines].sort((a, b) => a.ratio - b.ratio);
+        let pts = [];
+        let curCol = startCol;
+
+        pts.push({ x: padding + curCol * colW, y: 40 });
+
+        sorted.forEach(l => {
+            const y = 40 + l.ratio * (h - 80);
+            if (l.fromCol === curCol) {
+                pts.push({ x: padding + curCol * colW, y: y });
+                curCol++;
+                pts.push({ x: padding + curCol * colW, y: y });
+            } else if (l.fromCol === curCol - 1) {
+                pts.push({ x: padding + curCol * colW, y: y });
+                curCol--;
+                pts.push({ x: padding + curCol * colW, y: y });
+            }
+        });
+
+        pts.push({ x: padding + curCol * colW, y: h - 40 });
+        return pts;
+    }
+
+    function startAmida() {
+        const val = document.getElementById('studentSelect').value;
+        if (val === "") return;
+
+        const col = parseInt(val);
+        drawAmida(col);
+
+        const seatResult = state.results[col];
+        const resBox = document.getElementById('resultBox');
+        resBox.style.display = 'block';
+        resBox.innerText = `🎉 ${state.students[col]} さんの指定席は 【 ${seatResult + 1} 番 】 です！`;
+    }
+
+    function renderSeatGrid() {
+        const grid = document.getElementById('seatGrid');
+        grid.innerHTML = '';
+        grid.style.gridTemplateColumns = `repeat(${state.cols}, 1fr)`;
+
+        const totalSeats = state.cols * state.rows;
+        let seatMap = {};
+        Object.keys(state.results).forEach(sIdx => {
+            seatMap[state.results[sIdx]] = state.students[sIdx];
+        });
+
+        for (let i = 0; i < totalSeats; i++) {
+            const cell = document.createElement('div');
+            const name = seatMap[i] || '';
+            cell.className = `seat-cell ${name ? 'filled' : ''}`;
+            cell.innerHTML = `<div style="font-size:0.65rem; color:#868e96;">席 ${i + 1}</div><div>${name || '-'}</div>`;
+            grid.appendChild(cell);
+        }
+    }
+
+    // --- 管理機能 & 仕込みルール ---
+    function saveClassConfig() {
+        state.cols = parseInt(document.getElementById('colsInput').value) || 5;
+        state.rows = parseInt(document.getElementById('rowsInput').value) || 5;
+        state.students = document.getElementById('studentsInput').value.split('\n').map(s => s.trim()).filter(s => s);
+
+        updateSelectOptions();
+        generateAmida();
+        renderAll();
+        updateUrlBoxes();
+        alert('クラス設定を保存・再生成しました。');
+    }
+
+    function renderSecretRulesList() {
+        const container = document.getElementById('secretRulesList');
+        container.innerHTML = '';
+        if (state.secretRules.length === 0) {
+            container.innerHTML = '<div style="font-size:0.75rem; color:#868e96;">固定設定はありません。</div>';
+            return;
+        }
+        state.secretRules.forEach((rule) => addRuleRow(rule.student, rule.seatIndex));
+    }
+
+    function addRuleRow(student = '', seat = 0) {
+        const container = document.getElementById('secretRulesList');
+        if (container.querySelector('div') && container.querySelector('div').innerText.includes('ありません')) {
+            container.innerHTML = '';
+        }
+
+        const row = document.createElement('div');
+        row.className = 'secret-row';
+
+        let sOptions = state.students.map(s => `<option value="${s}" ${s === student ? 'selected' : ''}>${s}</option>`).join('');
+        let seatOptions = '';
+        for (let i = 0; i < state.cols * state.rows; i++) {
+            seatOptions += `<option value="${i}" ${i === seat ? 'selected' : ''}>${i + 1}番の席</option>`;
+        }
+
+        row.innerHTML = `
+            <select class="rule-student">${sOptions}</select>
+            <span style="font-size:0.75rem;">➔</span>
+            <select class="rule-seat">${seatOptions}</select>
+            <button class="btn-admin btn-sm remove-btn">削除</button>
+        `;
+
+        row.querySelector('.remove-btn').addEventListener('click', () => row.remove());
+        container.appendChild(row);
+    }
+
+    function applySecretRules() {
+        const rows = document.querySelectorAll('.secret-row');
+        let newRules = [];
+        rows.forEach(r => {
+            const s = r.querySelector('.rule-student').value;
+            const seat = parseInt(r.querySelector('.rule-seat').value);
+            if (s && !isNaN(seat)) {
+                newRules.push({ student: s, seatIndex: seat });
+            }
+        });
+        state.secretRules = newRules;
+        generateAmida();
+        renderAll();
+        updateUrlBoxes();
+        alert('仕込み設定を反映しました。発行URLを共有してください。');
+    }
+
+    // --- URL生成・コピー ---
+    function encodeData() {
+        const payload = {
+            cols: state.cols,
+            rows: state.rows,
+            students: state.students,
+            secretRules: state.secretRules
+        };
+        return btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+    }
+
+    function updateUrlBoxes() {
+        const baseUrl = window.location.origin + window.location.pathname;
+        const dataStr = encodeData();
+        
+        const studentUrl = `${baseUrl}?mode=view&data=${dataStr}`;
+        const adminUrl = `${baseUrl}?mode=admin&data=${dataStr}`;
+
+        document.getElementById('studentUrlBox').innerText = studentUrl;
+        document.getElementById('adminUrlBox').innerText = adminUrl;
+    }
+
+    function copyUrl(type) {
+        const text = type === 'student' 
+            ? document.getElementById('studentUrlBox').innerText 
+            : document.getElementById('adminUrlBox').innerText;
+        
+        navigator.clipboard.writeText(text).then(() => {
+            alert(`${type === 'student' ? '生徒用（表）' : '管理者用（裏）'}URLをクリップボードにコピーしました！`);
+        }).catch(() => {
+            alert('コピーに失敗しました。手動でURLテキストをコピーしてください。');
+        });
+    }
+</script>
+</body>
+</html>
